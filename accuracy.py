@@ -1,6 +1,8 @@
 from datetime import datetime
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 
 from a4s_eval.data_model.evaluation import DataShape, Dataset, Model
 from a4s_eval.data_model.measure import Measure
@@ -51,4 +53,37 @@ def accuracy(
     accuracy_value = correct / len(y_true) if len(y_true) > 0 else 0.0
     
     current_time = datetime.now()
+
+    # Read data and prepare columns
+    df = pd.read_csv("./tests/data/measures/accuracy.csv")
+    df['time'] = pd.to_datetime(df['time'])
+    score_value = df['score'][0]
+    time_value = df['time'][0]
+
+    # Plotting 
+    plt.style.use('seaborn-v0_8-whitegrid')
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # Create a scatter plot with a single point
+    ax.scatter(time_value, score_value, s=100, color='#007bbb', label=f'Accuracy: {score_value:.1%}')
+
+    # Formatting and Labels 
+    ax.set_title('Model Accuracy', fontsize=16, weight='bold')
+    ax.set_xlabel('Time', fontsize=11)
+    ax.set_ylabel('Accuracy Score', fontsize=11)
+
+    # Set axis settings
+    ax.set_ylim(0, 1.05)
+    ax.yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1.0))
+    fig.autofmt_xdate(rotation=30)
+
+    # Add a legend 
+    ax.legend(loc='best', fontsize=12)
+
+    plt.tight_layout()
+
+    # Save the Output 
+    output_path = 'model-accuracy.png'
+    plt.savefig(output_path, dpi=300)
+
     return [Measure(name="accuracy", score=accuracy_value, time=current_time)]
