@@ -3,12 +3,15 @@
 This repository contains the implementation of a **Model Metric** focused on measuring a model's vulnerability to **Attribute Inference Attacks**. 
 The development is part of the Cybersecurity and AI course taught at the University of Luxembourg.
 
-## 1\. Repository Information
+## 1\. Repository Information and Installation
 
 | Item | Details |
 | :--- | :--- |
 | **Repository URL** | `https://github.com/N-Maronic/a4s-attribute-inference/` |
 | **Branch** | `main` |
+
+
+To install all necessary components for the Attribute Inference metric into your existing **a4s-eval** framework, simply run the provided `install.py` script. The script will automatically download the Adult Census dataset, place it in the correct directory, install the metric implementation, test file, demo notebook, and update the project configuration. When prompted, supply the **absolute path to the root of your a4s-eval repository** (the folder containing both `a4s_eval/` and `tests/`). After completion, your environment will be fully configured and ready to run the metric and accompanying demo.
 
 -----
 
@@ -26,7 +29,7 @@ An **Attribute Inference Attack** works like this:
 2.  The attacker then feeds this model output ("90% No Default") into a separate, small **attacker model** (like the Logistic Regression implemented in the test).
 3.  The attacker model tries to guess the person's **gender** based only on that output probability.
 
-If our `attribute_inference` metric reports an accuracy of **95%**, it means your model's prediction is leaking enough information that an attacker can correctly guess the sensitive attribute 95% of the time, which is a serious privacy regulation.
+If our `attribute_inference` metric reports an accuracy of **95%**, it means your model's prediction is leaking enough information that an attacker can correctly guess the sensitive attribute 95% of the time, which is a serious privacy violation.
 
 ### Metric Name and Location
 
@@ -41,7 +44,7 @@ This metric is a **Model Metric**, meaning it evaluates a deployed model's behav
 | Assumption | Description |
 | :--- | :--- |
 | **Model Type** | Applicable to **classification models** (binary or multi-class). |
-| **Model Output** | The `functional_model` must expose either: \* `predict_proba(X)` (preferred, returns probability scores) OR \* `predict_class(X)` (returns hard predicted labels). |
+| **Model Output** | The `functional_model` must expose either: `predict_proba(X)` (preferred, returns probability scores) OR `predict_class(X)` (returns hard predicted labels). |
 | **Data Requirement** | Requires a **labeled dataset** (`Dataset.data`) that includes the **sensitive attribute**. |
 | **Sensitive Attribute** | The sensitive attribute must be **categorical** (typically binary, e.g., 0 or 1). |
 | **Attacker Model** | The metric uses a **Logistic Regression** classifier as the standard attribute inference attacker. |
@@ -76,26 +79,98 @@ The functionality of the `attribute_inference` metric is verified using an inclu
 | **Functional Model** | A fake class, `FakeFunctionalModel`, whose `predict_proba` function is designed to leak information about the sensitive feature: `logits = np.stack([x[:, 0], -x[:, 0]], axis=1)`. Since the sensitive attribute is based on $x[:, 0]$, the model output is directly related to the sensitive attribute, ensuring the resulting accuracy score is typically high (near 1.0) and the test is meaningful. |
 | **Expected Measure** | Returns one measure: `attribute_inference_accuracy`. |
 
-## 4. Next Steps 
 
-The implemented metric is currently verified using a minimal, synthetic test case. For the next phase, I will focus on proper real-world validation and integration into a robust privacy auditing pipeline, drawing inspiration from the Privacy Meter library's methodology.
+## 4\. Notebook Demo: End-to-End Attribute Inference Evaluation
 
-### 4.1. Testing with proper Benchmark Datasets
+This repository includes a complete **Jupyter Notebook demo** showing how to use the implemented `attribute_inference` metric in a realistic privacy evaluation scenario.
+The notebook walks through the entire workflow: loading a dataset, preprocessing, training models, running attribute inference attacks, and interpreting the results.
 
-The primary goal is to demonstrate the metric's efficacy on established benchmark datasets known for privacy risk evaluation:
+**Notebook File:**
 
-- Datasets: I'm planning to use the Purchase100 and Texas100 datasets, which are standard for evaluating privacy defenses against Membership and Attribute Inference Attacks.
+```
+attribute_inference_demo.ipynb
+```
 
-### 4.2. Implementation of the Test Scenario
 
-1. Target Model Training: A suitable target model will be trained on the full dataset, including all input features and the primary prediction label.
 
-2. Sensitive Attribute Selection: One feature will be designated as the sensitive attribute (e.g., Race or Gender from the Texas100 dataset).
+### **1. Loading the Adult Census Dataset**
 
-3. Attacker Training and Evaluation:
+The notebook uses the **Adult Census Income** dataset from Kaggle (`data/adult.csv`).
+This dataset is a standard benchmark in fairness and privacy research because it contains:
 
-    - The sensitive attribute will be removed from the features passed to the functional_model for prediction.
+* meaningful sensitive attributes (`race`, `sex`)
+* rich demographic information
+* realistic correlations between features
+* a real prediction task (income > 50K)
 
-    - The attribute_inference metric will be executed. It will take the target model's output (prediction probabilities) and train the internal LogisticRegression attacker to predict the removed sensitive attribute.
+These characteristics make it ideal for demonstrating attribute inference attacks.
 
-4. Goal: Achieve a quantitative measure of privacy leakage (Attribute Inference Accuracy) under a realistic threat model where the attacker only observes the model's output.
+---
+
+### **2. Preprocessing and Feature Encoding**
+
+The Adult dataset contains both numeric and categorical variables.
+To make it usable for machine learning models, all categorical features are transformed using **one-hot encoding**.
+
+Encoding is essential because:
+
+* machine learning models require numerical input
+* correlation analysis on strings is not meaningful
+* subtle demographic patterns become detectable to both the victim model and the attacker
+* removing a sensitive attribute does *not* eliminate demographic information due to redundant encodings (e.g., race correlates with native-country)
+
+---
+
+### **3. Building A4S-Compatible Functional Wrappers**
+
+The A4S framework expects a standardized model interface:
+
+```python
+predict_proba(x) -> np.ndarray
+```
+
+To meet this requirement, the notebook wraps each trained model (Logistic Regression and Neural Network) inside a **functional model wrapper** that:
+
+* applies the correct preprocessing (e.g., scaling)
+* ensures the correct feature order
+* removes sensitive features for the “without attribute” models
+* presents a clean API to the A4S `attribute_inference` metric
+
+
+---
+
+### **4. Training Victim Models**
+
+Two commonly used classification models are trained:
+
+* **Logistic Regression (LR)** — interpretable, stable, and widely used in fairness/privacy work
+* **Neural Network (NN)** — higher capacity, capable of capturing nonlinear patterns
+
+The notebook trains:
+
+* a **baseline model** using all features
+* a **modified model** where one sensitive attribute (e.g., race) is removed
+
+
+---
+
+### **5. Running Attribute Inference Attacks**
+
+For each sensitive attribute (race, sex, education), the notebook evaluates two scenarios:
+
+* **With attribute:** victim model trained using all features
+* **Without attribute:** victim model trained without the sensitive feature(s)
+
+The A4S `attribute_inference` metric trains an attacker model that tries to predict the sensitive attribute *only* from the victim model’s output probabilities.
+
+The result is an **attribute inference accuracy** for each setting and model type.
+
+---
+
+### **6. Interpreting the Results**
+
+The notebook includes a dedicated interpretation section explaining:
+
+* why **race inference** is very high (strong multivariate signal despite low Pearson correlation)
+* why **removing the sensitive attribute does not reduce leakage** (redundancy in correlated features)
+* why **LR and NN behave similarly** (similar output distributions, attacker only sees probabilities)
